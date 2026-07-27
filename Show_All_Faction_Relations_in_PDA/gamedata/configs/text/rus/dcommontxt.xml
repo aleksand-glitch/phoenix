@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <!-- Factions -->
+    <string id="ui_mcm_dcommontxt_factions_army">
+        <text>Военные</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_bandit">
+        <text>Бандиты</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_csky">
+        <text>Чистое небо</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_dolg">
+        <text>Долг</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_ecolog">
+        <text>Экологи</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_freedom">
+        <text>Свобода</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_killer">
+        <text>Наемники</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_monolith">
+        <text>Монолит</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_greh">
+        <text>Грех</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_isg">
+        <text>ИСГ</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_renegade">
+        <text>Ренегаты</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_stalker">
+        <text>Одиночки</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_zombied">
+        <text>Зомбированные</text>
+    </string>
+    <string id="dcommontxt_factions_phoenix">
+        <text>Феникс</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_phoenix">
+        <text>Феникс</text>
+    </string>
+</string_table>

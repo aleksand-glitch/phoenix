@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="ui_mcm_menu_dmg_safr_pda">
+		<text>PDA Relations+</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_title">
+		<text>Show All Faction Relations in PDA</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_user_preset">
+		<text>Mode</text>
+	</string>
+    <string id="ui_mcm_dmg_safr_pda_user_defined_desc_text">
+        <text>Use these settings if *User Defined* mode is selected:</text>
+    </string>	
+	<string id="ui_mcm_dmg_safr_pda_show_eliminated">
+		<text>Show eliminated factions</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_obscure_enemy_squad_count">
+		<text>Obscure enemy squad count</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_disable_squad_count">
+		<text>Disable squad count</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_show_local_squad_count">
+		<text>Show local squad count</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_use_encyclopedia_discovery">
+		<text>Use 'encyclopedia discovery'</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_debug_log">
+		<text>Enable Debug Log</text>
+	</string>
+	<string id="ui_mcm_dmg_safr_pda_show_mutant_faction">
+		<text>Show Mutant Relations</text>
+	</string>
+
+	<string id="ui_mcm_dmg_safr_pda_color_scheme">
+		<text>Color Scheme</text>
+	</string>
+    <string id="ui_mcm_lst_SAFR_colors_default_anomaly">
+        <text>Anomaly Default</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_colors_expanded">
+        <text>Expanded Palette</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_colors_monochrome">
+        <text>Monochrome</text>
+    </string>
+
+    <string id="ui_mcm_lst_SAFR_default_anomaly">
+        <text>Anomaly Default Extended</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_all_always">
+        <text>Always show all</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_all_when_discovered">
+        <text>Show when discovered</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_user_defined">
+        <text>User Defined</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_Never_show_faction">
+        <text>Never Show</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_Show_faction_by_progression">
+        <text>When discovered</text>
+    </string>
+    <string id="ui_mcm_lst_SAFR_Always_show_faction">
+        <text>Always Show</text>
+    </string>
+</string_table>

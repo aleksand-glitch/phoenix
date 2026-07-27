@@ -1,0 +1,1329 @@
+-- ======================================================================
+--[[	Show All Faction Relations in PDA
+-- ======================================================================
+ 	Monkeypatches for ui_pda_relations_tab.script
+	
+ 	Editor: dEmergence (dEmergence @ ModDB)
+ 	Source: https://www.moddb.com/mods/stalker-anomaly/addons/show-all-faction-relation-in-pda-except-monolith
+ 	Version: 6.4.4
+	Updated: 20250511
+		
+	This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
+	
+-- ===================================================================--]]
+
+get_config = safr_pda_mcm.get_config -- mcm file was renamed to apply new load order
+
+local SINGLETON = nil
+function ui_pda_relations_tab.get_ui()
+--	SINGLETON = SINGLETON or pda_relations_tab()
+	game_relations_analytics.create_snapshot() -- making sure snapshot is created when PDA is (first) used at the latest and definitely after relations have been set up.
+	SINGLETON = ui_pda_relations_tab.pda_relations_tab()
+	SINGLETON:Reset()
+	return SINGLETON
+end
+
+-- SAFR faction code reference lists
+-- Note V6.4: They are appended to vanilla script file for compatibility with SCP Addon and others which may have applied patches to that file:
+
+ui_pda_relations_tab.enc_ref_list = {
+	"loner",
+	"duty",
+	"freedom",
+	"clear_sky",
+	"ecologist",
+	"mercenary",
+	"military",
+	"isg",
+	"renegade",
+	"bandit",
+	"greh",
+	"monolith",
+	"zombified"
+}
+
+ui_pda_relations_tab.faction_code_list = {
+	"stalker",
+	"dolg",
+	"freedom",
+	"csky",
+	"ecolog",
+	"killer",
+	"army",
+	"isg",
+	"renegade",
+	"bandit",
+	"greh",
+	"monolith",
+	"zombied"
+}
+
+-- Reference List for comparison to vanilla settings
+local vanilla_faction_code_list = {
+	"stalker",
+	"dolg",
+	"freedom",
+	"csky",
+	"ecolog",
+	"killer",
+	"army",
+	"bandit",
+	"monolith"
+}
+
+function d_printf( debugtxt )
+	if user_debug_log then
+		printf(tostring( debugtxt ))
+	end
+end
+
+function list_contains(t,value)
+	for i = 1,#t do
+		if t[i] == value then
+			return true
+		end
+	end
+	return false
+end
+
+function SetFalse(t)
+  local s = {}
+  for _,v in pairs(t) do s[v] = false end
+  return s
+end
+
+function setup_faction_discovery_state_var()
+	d_printf("SAFR initializing discovered_factions checklist")
+	local m_data = alife_storage_manager.get_state()
+	m_data.SAFR_discovered_factions = SetFalse(game_relations.factions_table)
+end
+
+function get_faction_discovery_state(faction)
+	local m_data = alife_storage_manager.get_state()
+	if not (m_data.SAFR_discovered_factions) then
+		setup_faction_discovery_state_var()
+	end
+	local state = false
+	if m_data.SAFR_discovered_factions[faction] then
+		state = m_data.SAFR_discovered_factions[faction] == true
+	end
+	return state
+end
+
+function set_faction_discovery_state(faction)
+	local m_data = alife_storage_manager.get_state()
+	if not (m_data.SAFR_discovered_factions) then
+		setup_faction_discovery_state_var()
+	end
+	m_data.SAFR_discovered_factions[faction] = true
+end
+
+-- monkeypatching function ui_pda_encyclopedia_tab.detect_intereaction(typ, obj, name)
+local originalDIFunction = ui_pda_encyclopedia_tab.detect_intereaction
+function ui_pda_encyclopedia_tab.detect_intereaction(typ, obj, name)
+--"factions", nil, character_community(obj)
+	if typ == "factions" and not get_faction_discovery_state(name) then
+		set_faction_discovery_state(name)
+		d_printf("SAFR updated discovered_factions: "..name)
+	end
+	originalDIFunction(typ, obj, name)
+end
+
+-- dmg: moved to access via other functions
+local iobj = {}
+local kobj = {}
+
+-- dmg: fetch this from MCM settings later
+local user_obscure_enemy_squad_count = true
+local user_disable_squad_count = true
+
+local color_scheme = 0
+
+local color_mapping = {}
+
+-- dEmergence: function to refresh self.list
+ui_pda_relations_tab.pda_relations_tab.RefreshKnownFactionsList = function(self)
+	self.list = {}
+	self.list_squad_count = {}
+	self.list_squad_count_local = {}
+	self.list_is_enemy = {}
+	
+	enc_ref_list = ui_pda_relations_tab.enc_ref_list
+	faction_code_list = ui_pda_relations_tab.faction_code_list
+
+	-- Checking if faction entries in encyclopedia are unlocked to determine relations shown
+	-- Should never remain empty because own faction should be automatically be unlocked.
+
+	-- faction unlocked when encyclopedia article unlocked
+	local faction_is_unlocked = false
+	
+	-- vars holding settings from MCM
+	local user_preset = 2
+	local user_show_eliminated_factions = true
+	local user_debug_log = false
+	
+	local user_use_encyclopedia_discovery = false
+	
+	if ui_mcm then
+	
+		printdbg("ShowAllRelationsPDA: Loading Settings from MCM")
+	
+		user_debug_log = get_config("debug_log")
+		printdbg("  Debug Log Enabled: "..tostring(user_debug_log))
+	
+		user_preset = tonumber(get_config("user_preset"))		
+		d_printf(" MCM User Preset: "..tostring(user_preset))
+		
+		color_scheme = tonumber(get_config("color_scheme")) -- 0 Default, 1 Expanded, 2 Monochrome
+		user_show_eliminated_factions = get_config("show_eliminated")
+		user_obscure_enemy_squad_count = get_config("obscure_enemy_squad_count")
+		user_disable_squad_count = get_config("disable_squad_count")
+		show_mutant_faction = get_config("show_mutant_faction")
+		user_show_local_squad_count = get_config("show_local_squad_count")
+		
+		user_use_encyclopedia_discovery = get_config("use_encyclopedia_discovery")
+
+	end
+
+	printdbg("")
+	
+	if show_mutant_faction then
+		-- modify reference lists accordingly
+		if not list_contains(faction_code_list,"monster") then
+			-- assume the others do not contain it either
+			table.insert(faction_code_list,"monster")
+		end
+		if not list_contains(enc_ref_list,"monster") then
+			-- assume the others do not contain it either
+			table.insert(enc_ref_list,"monster")
+		end
+	end
+	
+	-- Get number of Squads per faction
+	local faction_squad_count = {}
+	local faction_squad_count_local = {}
+	local on_act_lvl = simulation_objects.is_on_the_actor_level
+
+	--if not user_disable_squad_count then
+
+		for id,v in pairs( SIMBOARD.squads ) do
+			local squad = alife_object(id)
+
+			for i=1, #faction_code_list do
+
+				if (faction_squad_count[i] == nil) then
+					faction_squad_count[i] = 0
+					faction_squad_count_local[i] = 0
+				end
+
+				if (squad.player_id == faction_code_list[i]) then
+					faction_squad_count[i] = faction_squad_count[i] + 1
+					-- is squad on the same level as actor?
+					if on_act_lvl(squad) then
+						faction_squad_count_local[i] = faction_squad_count_local[i] + 1
+					end
+				end
+
+			end
+
+		end
+
+		-- debug output
+		if not user_obscure_enemy_squad_count then
+			d_printf(" Total Squad Count by Faction:")
+			for i=1, #faction_code_list do
+				d_printf("  "..faction_code_list[i].." : "..faction_squad_count[i])
+			end	
+			d_printf("")
+			
+			d_printf(" Total Squad Count by Faction on current level:")
+			for i=1, #faction_code_list do
+				d_printf("  "..faction_code_list[i].." : "..faction_squad_count_local[i])
+			end	
+		end
+		
+	--end
+
+	d_printf("")
+	d_printf(" Checking which factions should be shown by unlocked encyclopedia article:")
+	
+	local actor_comm = get_actor_true_community()
+	local actor_is_vanilla_faction = list_contains(vanilla_faction_code_list, actor_comm)
+	
+	local r_val = 0
+	local is_enemy = false
+	
+	for i=1, #enc_ref_list do
+		
+		d_printf(" Faction: "..game.translate_string(faction_code_list[i]))
+		
+		if user_use_encyclopedia_discovery then
+			-- Get info if article is unlocked in encyclopedia instead of discovery state var (required for existing saves w/o all articles unlocked)
+			if enc_ref_list[i] ~= "monster" then
+				faction_is_unlocked = ui_pda_encyclopedia_tab.is_unlocked_article("encyclopedia_factions_"..enc_ref_list[i])
+			end
+		else
+			faction_is_unlocked = get_faction_discovery_state(faction_code_list[i])
+		end
+		
+		if enc_ref_list[i] == "monster" and show_mutant_faction then
+			faction_is_unlocked = true
+		end
+
+		if faction_is_unlocked then
+			d_printf("  encyclopedia_factions_"..enc_ref_list[i].." is unlocked")
+		end
+		
+		-- Apply MCM Override values if applicable
+		if ui_mcm then
+			if faction_code_list[i] ~= "monster" then
+				local mcm_val = ui_mcm.get("dmg_safr_pda/"..faction_code_list[i])
+				if not mcm_val then 
+					d_printf("!SAFR ERROR: No MCM setting available for '"..tostring(faction_code_list[i]).."'")
+				end
+				local val = 1 -- this equates to "no change" in case of error
+				if mcm_val then
+					val = tonumber(mcm_val)
+				end
+				if (val == 2) then
+					faction_is_unlocked = true
+				elseif (val == 0) then
+					faction_is_unlocked = false
+				end
+			end
+
+			if (user_preset == 0) then
+				-- actor faction is automatically unlocked				
+				if (not actor_is_vanilla_faction) and (faction_code_list[i] == actor_comm) then
+					faction_is_unlocked = true
+				end
+			elseif (user_preset == 1) then
+				faction_is_unlocked = true
+			end
+
+			if (faction_squad_count[i] == 0) and (user_show_eliminated_factions == false) then
+				faction_is_unlocked = false
+			end
+		else
+			faction_is_unlocked = true
+			d_printf("      No MCM: Default to true")
+		end
+		
+		if faction_is_unlocked then
+			self.list[#self.list+1] = faction_code_list[i]
+			self.list_squad_count[#self.list_squad_count+1] = faction_squad_count[i]
+			self.list_squad_count_local[#self.list_squad_count_local+1] = faction_squad_count_local[i]
+
+			-- Check if enemy to player
+			r_val = relation_registry.community_relation(actor_comm, faction_code_list[i])
+			d_printf("      Relation to Player: "..r_val)
+			is_enemy = (r_val <= game_relations.ENEMIES)
+			self.list_is_enemy[#self.list_is_enemy+1] = is_enemy
+			d_printf("      Is Enemy: "..tostring(is_enemy))
+		end
+	end
+	
+	-- if show_mutant_faction then
+		-- self.list[#self.list+1] = "monster"
+		-- self.list_squad_count[#self.list] = faction_squad_count[#self.list]
+	-- end
+end
+
+-- ui_pda_relations_tab.pda_relations_tab.on_option_change = function(self)
+	-- self:Reset()
+-- end
+
+ui_pda_relations_tab.pda_relations_tab.on_game_start = function(self)
+	--RegisterScriptCallback("on_option_change",self:on_option_change())
+	RegisterScriptCallback("on_option_change",self:Reset())
+end
+
+ui_pda_relations_tab.pda_relations_tab.RefreshRelationsMatrix = function(self)
+	-- dEmergence: Refresh Known Faction List first
+	-- self:RefreshKnownFactionsList()
+	
+	local self_page_desc = self.page_desc[self.page_cat]
+	
+	local max_i_index = #self.list
+	local max_k_index = #self.list + 1
+	if user_disable_squad_count then
+		max_k_index = max_i_index
+	end	
+	local k_index = 0
+	
+	local actor_comm = get_actor_true_community()
+
+	for i=1, max_i_index do
+		-- dmg : catch possibility of all factions being set to "never_show"
+		if max_i_index > 0 and i <= max_i_index then
+			if not user_disable_squad_count then
+				if (self.list_squad_count[i] == 0) or (self.list_is_enemy[i] and user_obscure_enemy_squad_count) then
+					iobj[i]:SetTextColor(self.clr_gray)
+				end
+			end
+			if (self.list[i] == actor_comm) then
+				iobj[i]:SetTextColor(color_mapping["st_ui_dmg_safr_pda_actor_faction"])
+			end
+			iobj[i]:SetText(game.translate_string(self.list[i]))
+		else
+			iobj[i]:SetText("")
+		end
+		for k=0, max_k_index do
+			if (i == 1) then
+				if (k == 0) and not user_disable_squad_count then
+					--if user_disable_squad_count then
+					--	kobj[k]:SetTextColor(self.clr_gray)
+					--else
+						kobj[k]:SetTextColor(color_mapping["st_ui_dmg_safr_pda_squad_count_label"])
+					--end
+					if self_page_desc[self.page].pg_type == "killcount" then
+						kobj[k]:SetText("Zone")
+					else					
+						kobj[k]:SetText(game.translate_string("st_ui_dmg_safr_pda_squadcount"))
+					end
+				elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+					if self_page_desc[self.page].pg_type == "killcount" then
+						kobj[k]:SetText("Actor")
+					else
+						kobj[k]:SetTextColor(color_mapping["st_ui_goodwill_name"])
+						kobj[k]:SetText(game.translate_string("st_ui_goodwill_name"))
+					end
+				else
+					-- dmg : catch possibility of all factions being set to "never_show"
+					if max_i_index > 0 and k <= max_k_index then
+						if not user_disable_squad_count then
+							k_index = k - 1
+						else
+							k_index = k
+						end						
+						if not user_disable_squad_count then
+							if (self.list_squad_count[k_index] == 0) or (self.list_is_enemy[k_index] and user_obscure_enemy_squad_count) then
+								kobj[k]:SetTextColor(self.clr_gray)
+							end
+						end
+						if (self.list[k_index] == actor_comm) then
+							kobj[k]:SetTextColor(color_mapping["st_ui_dmg_safr_pda_actor_faction"])
+						end						
+						kobj[k]:SetText(game.translate_string(self.list[k_index]))
+					else
+						kobj[k]:SetText("")
+					end					
+				end
+			end
+		end
+	end
+end
+
+function get_pages_count(page_desc)
+	if not page_desc then
+		return 0
+	end
+	
+	local count = 0
+	for i = 1, #page_desc do
+		if page_desc[i].pg_enabled then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+ui_pda_relations_tab.pda_relations_tab.InitControls = function(self)
+
+	-- create snapshot on the spot
+	game_relations_analytics.create_snapshot()
+
+	-- SAFR: Call early to get # of factions to show
+	self:RefreshKnownFactionsList()
+
+	-- prepare color mappings
+	self.clr_white = utils_xml.get_color("white",true)
+	self.clr_pda_blue = utils_xml.get_color("pda_blue",true)
+	self.clr_cyan = utils_xml.get_color("d_cyan",true)
+	self.clr_orange = utils_xml.get_color("orange",true)
+	self.clr_pda_green = utils_xml.get_color("pda_green",true)
+	self.clr_gray_light = utils_xml.get_color("ui_gray_1",true)
+	self.clr_gray = utils_xml.get_color("ui_gray_2",true)
+	self.clr_d_red = utils_xml.get_color("d_red",true)
+	
+	color_mapping["st_ui_dmg_safr_pda_actor_faction"] = (color_scheme ~= 2) and self.clr_pda_blue or self.clr_white
+	color_mapping["st_ui_dmg_safr_pda_squad_count_label"] = (color_scheme ~= 2) and self.clr_cyan or self.clr_gray_light
+	color_mapping["st_ui_goodwill_name"] = (color_scheme ~= 2) and self.clr_pda_green or self.clr_gray
+	
+	color_mapping["st_ui_dmg_safr_pda_squadsize_5_enemy"] = (color_scheme ~= 2) and self.clr_red or self.clr_gray_light
+	color_mapping["st_ui_dmg_safr_pda_squadsize_4_enemy"] = (color_scheme == 0) and self.clr_red or (color_scheme == 1) and self.clr_d_red or self.clr_gray_light
+	color_mapping["st_ui_dmg_safr_pda_squadsize_3_enemy"] = (color_scheme == 0) and self.clr_yellow or (color_scheme == 1) and self.clr_orange or self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_squadsize_2_enemy"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_squadsize_1_enemy"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_squadsize_0_enemy"] = (color_scheme == 0) and self.clr_yellow or self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_squadsize_5"] = (color_scheme ~= 2) and self.clr_green or self.clr_white
+	color_mapping["st_ui_dmg_safr_pda_squadsize_4"] = (color_scheme == 0) and self.clr_green or (color_scheme == 1) and self.clr_pda_green or self.clr_white
+	color_mapping["st_ui_dmg_safr_pda_squadsize_3"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_squadsize_2"] = (color_scheme == 0) and self.clr_yellow or (color_scheme == 1) and self.clr_orange or self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_squadsize_1"] = (color_scheme ~= 2) and self.clr_red or self.clr_gray_light
+	color_mapping["st_ui_dmg_safr_pda_squadsize_0"] = (color_scheme == 0) and self.clr_yellow or self.clr_gray
+	
+	color_mapping["st_ui_goodwill_5"] = (color_scheme ~= 2) and self.clr_green or self.clr_white
+	color_mapping["st_ui_goodwill_4"] = (color_scheme ~= 2) and self.clr_green or self.clr_white
+	color_mapping["st_ui_goodwill_3"] = (color_scheme == 0) and self.clr_yellow or (color_scheme == 1) and self.clr_pda_green or self.clr_gray
+	color_mapping["st_ui_goodwill_2"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray
+	color_mapping["st_ui_goodwill_1"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray
+	color_mapping["st_ui_goodwill_0"] = (color_scheme == 0) and self.clr_yellow or (color_scheme == 1) and self.clr_orange or self.clr_gray
+	color_mapping["st_ui_goodwill_00"] = (color_scheme ~= 2) and self.clr_red or self.clr_gray_light
+	
+	color_mapping["st_goodwill_friendly_2"] = (color_scheme ~= 2) and self.clr_green or self.clr_white
+	color_mapping["st_goodwill_friendly_1"] = (color_scheme == 0) and self.clr_yellow or (color_scheme == 1) and self.clr_pda_green or self.clr_gray
+	color_mapping["st_goodwill_enemy"] = (color_scheme ~= 2) and self.clr_red or self.clr_gray_light
+	color_mapping["st_goodwill_indifferent_0"] = (color_scheme == 0) and self.clr_yellow or self.clr_gray
+	color_mapping["st_goodwill_indifferent_pos"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray
+	color_mapping["st_goodwill_indifferent_neg"] = (color_scheme == 0) and self.clr_yellow or (color_scheme == 1) and self.clr_orange or self.clr_gray
+	
+	color_mapping["st_ui_dmg_safr_pda_killcount_0"] = self.clr_gray
+	color_mapping["st_ui_dmg_safr_pda_killcount_1"] = (color_scheme ~= 2) and self.clr_yellow or self.clr_gray_light
+	color_mapping["st_ui_dmg_safr_pda_killcount_1_rogue"] = (color_scheme ~= 2) and self.clr_orange or self.clr_gray_light
+	color_mapping["st_ui_dmg_safr_pda_killcount_1_enemy"] = (color_scheme ~= 2) and self.clr_red or self.clr_gray_light
+	color_mapping["st_ui_dmg_safr_pda_killcount_1_friend"] = (color_scheme ~= 2) and self.clr_green or self.clr_white
+
+	self:SetWndRect(Frect():set(0, 0, 1024, 768))
+
+	local xml = CScriptXmlInit()
+	
+	if #self.list < 10 then
+		if not user_disable_squad_count then
+			xml:ParseFile("pda_relations_f9.xml")
+		else
+			xml:ParseFile("pda_relations_f9x.xml")
+		end
+	elseif #self.list == 10 then
+		if not user_disable_squad_count then
+			xml:ParseFile("pda_relations_f10.xml")
+		else
+			xml:ParseFile("pda_relations_f10x.xml")
+		end
+	elseif #self.list == 11 then
+		if not user_disable_squad_count then
+			xml:ParseFile("pda_relations_f11.xml")
+		else
+			xml:ParseFile("pda_relations_f11x.xml")
+		end
+	elseif #self.list == 12 then
+		if not user_disable_squad_count then
+			xml:ParseFile("pda_relations_f12.xml")
+		else
+			xml:ParseFile("pda_relations_f12x.xml")
+		end
+	elseif #self.list == 13 then
+		if not user_disable_squad_count then
+			xml:ParseFile("pda_relations_f13.xml")
+		else
+			xml:ParseFile("pda_relations_f13x.xml")
+		end
+	else
+		if not user_disable_squad_count then
+			xml:ParseFile("pda_relations_f14.xml")
+		else
+			xml:ParseFile("pda_relations_f14x.xml")
+		end		
+	end
+
+	xml:InitFrame("frame",self)
+	xml:InitStatic("center_background", self)
+	self.tab = xml:InitStatic("tab", self)
+	self.caption = xml:InitStatic("tab:caption", self.tab)
+	
+	self.btn = xml:Init3tButton("btn_to_text", self)
+	self:Register(self.btn, "btn")
+	self:AddCallback("btn", ui_events.BUTTON_CLICKED, self.btn_to_text, self)
+	
+	self.btn_sc = xml:Init3tButton("btn_switch_cat", self)
+	self:Register(self.btn_sc, "btn_sc")
+	self:AddCallback("btn_sc", ui_events.BUTTON_CLICKED, self.btn_switch_cat, self)
+	
+	self.page_desc = {
+		{
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_current_text", ["pg_label"] = "Current (Text)", ["pg_type"] = "current", ["pg_param"] = "text", ["pg_enabled"] = true},
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_current_vals", ["pg_label"] = "Current (Values)", ["pg_type"] = "current", ["pg_param"] = "values", ["pg_enabled"] = true },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_24hr", ["pg_label"] = "Last 24h", ["pg_type"] = "history", ["pg_param"] = "t_24h", ["pg_enabled"] = true },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_72hr", ["pg_label"] = "Last 72h", ["pg_type"] = "history", ["pg_param"] = "t_72h", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_72h"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_1wk", ["pg_label"] = "Last Week", ["pg_type"] = "history", ["pg_param"] = "t_1wk", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_1wk"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_2wks", ["pg_label"] = "2 Weeks", ["pg_type"] = "history", ["pg_param"] = "t_2wk", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_2wk"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_1mth", ["pg_label"] = "Last Month", ["pg_type"] = "history", ["pg_param"] = "t_4wk", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_4wk"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_all", ["pg_label"] = "All Time", ["pg_type"] = "history", ["pg_param"] = "t_all", ["pg_enabled"] = true },
+			--{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_history_1st", ["pg_label"] = "First Record", ["pg_type"] = "history", ["pg_param"] = "t_1st", ["pg_enabled"] = true },
+			--{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_default_delta", ["pg_label"] = "Defaults (Delta)", ["pg_type"] = "default", ["pg_param"] = "delta", ["pg_enabled"] = true },
+			--{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_default_ltx", ["pg_label"] = "Defaults (LTX)", ["pg_type"] = "default", ["pg_param"] = "ltx", ["pg_enabled"] = true },
+		},
+		{
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_casualties_all", ["pg_label"] = "All Time", ["pg_type"] = "killcount", ["pg_param"] = "current", ["pg_enabled"] = true},
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_casualties_24h", ["pg_label"] = "Last 24h", ["pg_type"] = "killcount", ["pg_param"] = "t_24h", ["pg_enabled"] = true},
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_casualties_72h", ["pg_label"] = "Last 72h", ["pg_type"] = "killcount", ["pg_param"] = "t_72h", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_72h"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_casualties_1wk", ["pg_label"] = "Last Week", ["pg_type"] = "killcount", ["pg_param"] = "t_1wk", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_1wk"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_casualties_2wks", ["pg_label"] = "Last 2 Weeks", ["pg_type"] = "killcount", ["pg_param"] = "t_2wk", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_2wk"] or 0) > 0) },
+			{ ["pg_caption"] = "st_ui_dmg_safr_pda_header_caption_casualties_1mth", ["pg_label"] = "Last Month", ["pg_type"] = "killcount", ["pg_param"] = "t_4wk", ["pg_enabled"] = ((game_relations_analytics.relations_analytics_config["t_4wk"] or 0) > 0) },
+		},
+	}
+
+	self.page_cat_label = {"st_ui_dmg_safr_pda_cat_relations","st_ui_dmg_safr_pda_cat_casualties"}
+
+	self.page_cat = 1	
+	self.page = 1
+	self.page_show_as = 1
+
+	local self_page_desc = self.page_desc[self.page_cat]
+
+	local goto_next_page = not self_page_desc[self.page].pg_enabled
+	while goto_next_page do
+		self.page = self.page + 1
+		if self.page > #self_page_desc then
+			self.page = 1
+		end
+		if self_page_desc[self.page].pg_enabled then
+			goto_next_page = false
+		end		
+	end
+
+	self.caption:TextControl():SetText(game.translate_string(self_page_desc[self.page].pg_caption))
+	
+	self.pages_count = get_pages_count(self_page_desc)
+	--self.btn:TextControl():SetText(self.page_desc[self.page].pg_label)
+	self.btn:TextControl():SetText(self.page_show_as.." / "..self.pages_count)
+	self.btn_sc:TextControl():SetText(game.translate_string(self.page_cat_label[self.page_cat]))
+
+	-- dEmergence: Relation Matrix XML Setup only. Modified code to create objects for all col and row objects (13x14) that fit the template.
+	self.relations = {}
+
+	local is_widescreen = true --utils_xml.is_widescreen()
+	local x = is_widescreen and 40 or 55
+	local c_width = is_widescreen and 75 or 90
+	local c_height = 31.81
+	local c_count_h = #self.list
+	local c_count_v = #self.list + 2
+	if user_disable_squad_count then
+		c_height = 35
+		c_count_v = #self.list + 1
+	end
+	if #self.list > 9 then
+		c_width = is_widescreen and ( 675 / c_count_h ) or ( 90 / (75 / ( 675 / c_count_h )))
+		c_height = (350 / ( c_count_v ))
+	end
+	local x_offset = 0
+
+	for i=1, c_count_h do
+		x = x + c_width
+		
+		if (i == 1) then
+--				x_offset = x + 10
+			if c_count_h > 9 then
+				x_offset = x + ((c_count_h - 9) * 2.75)
+			else
+				x_offset = x
+			end
+		else
+			x_offset = x
+		end
+		
+		iobj[i] = xml:InitTextWnd("tab:faction", self.tab)
+		iobj[i]:SetWndPos(vector2():set(x_offset,65))
+		iobj[i]:SetText("")
+		
+		self.relations[i] = {}
+		
+--			local y = 65
+		local y = 60
+		if c_count_h > 9 then
+			y = y + ((c_count_h - 9) * 1.7)
+		end
+		for k=0, (c_count_v - 1) do
+			y = y + c_height
+			if (i == 1) then
+				kobj[k] = xml:InitTextWnd("tab:faction", self.tab)
+				kobj[k]:SetWndPos(vector2():set(x - c_width, y))
+				kobj[k]:SetText("")
+			end
+			self.relations[i][k] = xml:InitTextWnd("tab:cell",self.tab)
+			self.relations[i][k]:SetWndPos(vector2():set(x_offset,y))
+			self.relations[i][k]:SetText("")			
+		end
+		if (i == 1) then
+			x = x_offset
+		end
+	end
+
+	-- Companion ListView
+	xml:InitFrame("companion_frame",self)
+	xml:InitStatic("companion_background",self)
+
+	self.companion_listbox = xml:InitListBox("companion_wnd",self)
+	self.companion_listbox:SetItemHeight(140)
+
+	self.auto_chk = xml:InitCheck("auto_check",self)
+	self.auto_chk:SetCheck(false)
+	
+	for row=1,4 do
+		local row_form = ui_pda_relations_tab.ui_companion_row(self,row,xml)
+		row_form:SetWndSize(vector2():set(740,140))
+		self.companion_listbox:AddExistingItem(row_form)
+	end
+	
+	-- Hint Window
+	self.hint_wnd = utils_ui.UIHint(self)
+	
+	-- self:Reset()
+end
+
+ui_pda_relations_tab.pda_relations_tab.Reset = function(self)
+	-- dEmergence: Refresh Relations Matrix
+	self:RefreshRelationsMatrix()
+
+	local self_page_desc = self.page_desc[self.page_cat]
+	d_printf("* PDA Relations Tab Refresh: pg_type == "..tostring(self_page_desc[self.page].pg_type)..", pg_param == "..tostring(self_page_desc[self.page].pg_param))
+
+	local max_i_index = #self.list
+	local max_k_index = #self.list + 1
+	if user_disable_squad_count then
+		max_k_index = max_i_index
+	end
+	local k_index = 0
+	
+	-- [i] columns
+	-- [k] rows
+
+	for i=1, max_i_index do
+		for k=0, max_k_index do
+			-- dmg : catch possibility of all factions being set to "never_show"
+			self.relations[i][k]:SetText("")
+
+			local cell_color
+			local cell_value
+			
+			-- Kill Count Total
+			if self_page_desc[self.page].pg_type == "killcount" and self_page_desc[self.page].pg_param == "current" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)
+
+					local r_val = 0					
+					cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_0"]
+					local actor_comm = get_actor_true_community()
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						r_val = game_relations_analytics.get_killcount(comm,self.list[i]) or 0
+					end
+					
+					if (k == 0) and not user_disable_squad_count then
+						-- if first row then squad count
+						r_val = game_relations_analytics.get_killcount("zone",self.list[i]) or 0
+
+					elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+						-- if second row (or first and squad count disabled) then goodwill
+						r_val = game_relations_analytics.get_killcount("actor",self.list[i]) or 0
+					end
+
+					cell_value = tostring(r_val)
+					if r_val > 0 then
+						-- if is_enemy (self.list[k_index], self.list[i]) and self.list[i] is enemy to actor then green
+						-- if not is_enemy (self.list[k_index], self.list[i]) then orange
+						-- if is_enemy (self.list[k_index], self.list[i]) and self.list[i] not enemy to actor then yellow
+						if game_relations.is_factions_enemies(actor_comm, self.list[i]) then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1_friend"]
+						elseif (k_index > 0 and not game_relations.is_factions_enemies(self.list[k_index], self.list[i])) or (k_index == 1 and not game_relations.is_factions_enemies(actor_comm, self.list[i])) then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1_rogue"]
+						elseif not game_relations.is_factions_enemies(actor_comm, self.list[i]) then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1_enemy"]
+						else
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1"]
+						end
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+			
+			-- Kill Count History
+			if self_page_desc[self.page].pg_type == "killcount" and self_page_desc[self.page].pg_param ~= "current" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)
+					local tiz_param = self_page_desc[self.page].pg_param
+					local tiz_index = game_relations_analytics.relations_analytics_config[tiz_param] or 0
+					
+					local r_val = 0
+					local r_current, r_history
+					
+					cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_0"]
+					
+					local actor_comm = get_actor_true_community()
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						r_history = game_relations_analytics.get_killcount_history(tiz_index,comm,self.list[i]) or 0 -- added 'or 0' to show < 24hrs kills when installed on existing save
+						r_current = game_relations_analytics.get_killcount(comm,self.list[i]) or 0
+						--r_val = (r_history and r_current or 0) - (r_history or 0)
+						r_val = r_current - r_history
+					end
+					
+					if (k == 0) and not user_disable_squad_count then
+						-- first row
+						r_history = game_relations_analytics.get_killcount_history(tiz_index,"zone",self.list[i]) or 0 -- added 'or 0' to show < 24hrs kills when installed on existing save
+						r_current = game_relations_analytics.get_killcount("zone",self.list[i]) or 0
+						--r_val = (r_history and r_current or 0) - (r_history or 0)
+						r_val = r_current - r_history
+
+					elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+						-- second row
+						r_history = game_relations_analytics.get_killcount_history(tiz_index,"actor",self.list[i]) or 0 -- added 'or 0' to show < 24hrs kills when installed on existing save
+						r_current = game_relations_analytics.get_killcount("actor",self.list[i]) or 0
+						--r_val = (r_history and r_current or 0) - (r_history or 0)
+						r_val = r_current - r_history
+					end
+
+					cell_value = (r_val > 0 ) and ("+"..tostring(r_val)) or tostring(r_val)
+					if r_val > 0 then
+						if game_relations.is_factions_enemies(actor_comm, self.list[i]) then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1_friend"]
+						elseif (k_index > 0 and not game_relations.is_factions_enemies(self.list[k_index], self.list[i])) or (k_index == 1 and not game_relations.is_factions_enemies(actor_comm, self.list[i])) then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1_rogue"]
+						elseif not game_relations.is_factions_enemies(actor_comm, self.list[i]) then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1_enemy"]
+						else
+							cell_color = color_mapping["st_ui_dmg_safr_pda_killcount_1"]
+						end
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+			
+			-- Current Relations as Text or Values
+			if self_page_desc[self.page].pg_type == "current" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)
+
+					local r_val = 0
+					local r_val2 = 0
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						r_val = relation_registry.community_relation(comm, self.list[i]) or 0
+					end
+					
+					if (k == 0) and not user_disable_squad_count then
+						-- if first row then squad count
+						r_val = self.list_squad_count[i] or 0
+						r_val2 = self.list_squad_count_local[i] or 0
+						
+						if user_obscure_enemy_squad_count and self.list_is_enemy[i] then
+							cell_color = self.clr_gray
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+						elseif r_val >= 25 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_5_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_5"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_5")
+						elseif r_val < 25 and r_val >= 15 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_4_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_4"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_4")
+						elseif r_val < 15 and r_val >= 10 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_3_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_3"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_3")
+						elseif r_val < 10 and r_val >= 6 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_2_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_2"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_2")
+						elseif r_val < 6 and r_val > 0 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_1_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_1"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_1")
+						else
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_0_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_0")
+						end
+
+					elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+						-- if second row (or first and squad count disabled) then goodwill
+						r_val = relation_registry.community_goodwill(self.list[i],AC_ID) or 0
+						if r_val >= 2000 then
+							cell_color = color_mapping["st_ui_goodwill_5"]
+							cell_value = game.translate_string("st_ui_goodwill_5")
+						elseif r_val < 2000 and r_val >= 1000 then
+							cell_color = color_mapping["st_ui_goodwill_4"]
+							cell_value = game.translate_string("st_ui_goodwill_4")
+						elseif r_val < 1000 and r_val >= 500 then
+							cell_color = color_mapping["st_ui_goodwill_3"]
+							cell_value = game.translate_string("st_ui_goodwill_3")
+						elseif r_val < 500 and r_val >= 250 then
+							cell_color = color_mapping["st_ui_goodwill_2"]
+							cell_value = game.translate_string("st_ui_goodwill_2")
+						elseif r_val < 250 and r_val > 0 then
+							cell_color = color_mapping["st_ui_goodwill_1"]
+							cell_value = game.translate_string("st_ui_goodwill_1")
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_0")
+						elseif r_val < 0 and r_val > -1000 then
+							cell_color = color_mapping["st_ui_goodwill_0"]
+							cell_value = game.translate_string("st_ui_goodwill_0")
+						else
+							cell_color = color_mapping["st_ui_goodwill_00"]
+							cell_value = game.translate_string("st_ui_goodwill_00")
+						end
+					else
+						if r_val >= game_relations.FRIENDS then
+							cell_color = color_mapping["st_goodwill_friendly_2"]
+							cell_value = game.translate_string("st_goodwill_friendly")
+						elseif r_val <= game_relations.ENEMIES then
+							cell_color = color_mapping["st_goodwill_enemy"]
+							cell_value = game.translate_string("st_goodwill_enemy")
+						elseif r_val >= 500 then
+							cell_color = color_mapping["st_goodwill_friendly_1"]
+							cell_value = game.translate_string("st_goodwill_friendly")
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_0"]
+							cell_value = game.translate_string("st_goodwill_indifferent")
+						elseif r_val < 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_neg"]
+							cell_value = game.translate_string("st_goodwill_indifferent")
+						else
+							cell_color = color_mapping["st_goodwill_indifferent_pos"]
+							cell_value = game.translate_string("st_goodwill_indifferent")
+						end
+					end
+					
+					-- Show values instead if param is 'values'
+					if self_page_desc[self.page].pg_param == "values" then
+						if k > 0 then
+							cell_value = r_val
+						else
+							if not user_disable_squad_count then
+								--self.relations[i][k]:SetText("-")
+								if (self.list_is_enemy[i] and user_obscure_enemy_squad_count) then
+									cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+								elseif user_show_local_squad_count then
+									cell_value = tostring(r_val).." ("..tostring(r_val2)..")"
+								else
+									cell_value = r_val
+								end
+							else
+								cell_value = r_val
+							end
+						end
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+			
+			-- Relations Delta
+			if self_page_desc[self.page].pg_type == "history" and self_page_desc[self.page].pg_param ~= "t_1st" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)
+					local tiz_param = self_page_desc[self.page].pg_param
+					local tiz_index = game_relations_analytics.relations_analytics_config[tiz_param] or 0
+
+					local r_val = 0
+					local r_current, r_history
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						if comm ~= self.list[i] then
+							r_history = game_relations_analytics.get_relations_history(tiz_index,comm,self.list[i])
+							r_current = relation_registry.community_relation(comm, self.list[i]) or 0
+							r_val = (r_history and r_current or 0) - (r_history or 0)
+						else
+							r_val = "nan"
+						end
+					end
+					
+					if type(r_val) == "number" then
+						if (k == 0) and not user_disable_squad_count then
+							-- if first row then squad count
+							r_history = game_relations_analytics.get_relations_history(tiz_index,self.list[i],"squadcount")
+							r_current = self.list_squad_count[i] or 0
+							r_val = (r_history and r_current or 0) - (r_history or 0)
+							
+							if user_obscure_enemy_squad_count and self.list_is_enemy[i] then
+								cell_color = self.clr_gray
+								cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+							elseif r_val > 0 then
+								cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_5_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_5"]
+							elseif r_val == 0 then
+								cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_4_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_4"]
+							else
+								cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_5"] or color_mapping["st_ui_dmg_safr_pda_squadsize_5_enemy"]
+							end
+
+						elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+							-- if second row (or first and squad count disabled) then goodwill
+							r_history = game_relations_analytics.get_relations_history(tiz_index,self.list[i],"goodwill")
+							r_current = relation_registry.community_goodwill(self.list[i],AC_ID) or 0
+							r_val = (r_history and r_current or 0) - (r_history or 0)
+							
+							if r_val >= 2000 then
+								cell_color = color_mapping["st_ui_goodwill_5"]
+							elseif r_val < 2000 and r_val >= 1000 then
+								cell_color = color_mapping["st_ui_goodwill_4"]
+							elseif r_val < 1000 and r_val >= 500 then
+								cell_color = color_mapping["st_ui_goodwill_3"]
+							elseif r_val < 500 and r_val >= 250 then
+								cell_color = color_mapping["st_ui_goodwill_2"]
+							elseif r_val < 250 and r_val > 0 then
+								cell_color = color_mapping["st_ui_goodwill_1"]
+							elseif r_val == 0 then
+								cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+							elseif r_val < 0 and r_val > -1000 then
+								cell_color = color_mapping["st_ui_goodwill_0"]
+							else
+								cell_color = color_mapping["st_ui_goodwill_00"]
+							end
+						else
+							if r_val >= game_relations.FRIENDS then
+								cell_color = color_mapping["st_goodwill_friendly_2"]
+							elseif r_val <= game_relations.ENEMIES then
+								cell_color = color_mapping["st_goodwill_enemy"]
+							elseif r_val >= 500 then
+								cell_color = color_mapping["st_goodwill_friendly_1"]
+							elseif r_val == 0 then
+								cell_color = color_mapping["st_goodwill_indifferent_0"]
+							elseif r_val < 0 then
+								cell_color = color_mapping["st_goodwill_indifferent_neg"]
+							else
+								cell_color = color_mapping["st_goodwill_indifferent_pos"]
+							end
+						end
+						
+						if k > 0 then
+							cell_value = (r_val > 0 ) and ("+"..tostring(r_val)) or tostring(r_val)
+						else
+							if not user_disable_squad_count then
+								--self.relations[i][k]:SetText("-")
+								if (self.list_is_enemy[i] and user_obscure_enemy_squad_count) then
+									cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+								else
+									cell_value = (r_val > 0 ) and ("+"..tostring(r_val)) or tostring(r_val)
+								end
+							else
+								cell_value = (r_val > 0 ) and ("+"..tostring(r_val)) or tostring(r_val)
+							end
+						end
+					else
+						-- same faction relations delta unavailable until DFRC gets an update
+						cell_value = "-"
+						cell_color = self.clr_gray
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+
+			-- first record
+			if self_page_desc[self.page].pg_type == "history" and self_page_desc[self.page].pg_param == "t_1st" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)
+
+					local r_val = 0
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						r_val = game_relations_analytics.get_relations_history(0,comm,self.list[i]) or 0
+					end
+					
+					-- when viewing page "Default (values)" then values refer to first snapshot:
+					
+					if (k == 0) and not user_disable_squad_count then
+						-- if first row then squad count
+						r_val = game_relations_analytics.get_relations_history(0,self.list[i],"squadcount") or 0
+						
+						if user_obscure_enemy_squad_count and self.list_is_enemy[i] then
+							cell_color = self.clr_gray
+							cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+						elseif r_val > 0 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_5_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_5"]
+						elseif r_val == 0 then
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_4_enemy"] or color_mapping["st_ui_dmg_safr_pda_squadsize_4"]
+						else
+							cell_color = self.list_is_enemy[i] and color_mapping["st_ui_dmg_safr_pda_squadsize_5"] or color_mapping["st_ui_dmg_safr_pda_squadsize_5_enemy"]
+						end
+
+					elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+						-- if second row (or first and squad count disabled) then goodwill
+						r_val = game_relations_analytics.get_relations_history(0,self.list[i],"goodwill") or 0
+
+						if r_val >= 2000 then
+							cell_color = color_mapping["st_ui_goodwill_5"]
+						elseif r_val < 2000 and r_val >= 1000 then
+							cell_color = color_mapping["st_ui_goodwill_4"]
+						elseif r_val < 1000 and r_val >= 500 then
+							cell_color = color_mapping["st_ui_goodwill_3"]
+						elseif r_val < 500 and r_val >= 250 then
+							cell_color = color_mapping["st_ui_goodwill_2"]
+						elseif r_val < 250 and r_val > 0 then
+							cell_color = color_mapping["st_ui_goodwill_1"]
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+						elseif r_val < 0 and r_val > -1000 then
+							cell_color = color_mapping["st_ui_goodwill_0"]
+						else
+							cell_color = color_mapping["st_ui_goodwill_00"]
+						end
+					else
+						if r_val >= game_relations.FRIENDS then
+							cell_color = color_mapping["st_goodwill_friendly_2"]
+						elseif r_val <= game_relations.ENEMIES then
+							cell_color = color_mapping["st_goodwill_enemy"]
+						elseif r_val >= 500 then
+							cell_color = color_mapping["st_goodwill_friendly_1"]
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_0"]
+						elseif r_val < 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_neg"]
+						else
+							cell_color = color_mapping["st_goodwill_indifferent_pos"]
+						end
+					end
+					
+					if k > 0 then
+						cell_value = r_val
+					else
+						if not user_disable_squad_count then
+							--self.relations[i][k]:SetText("-")
+							if (self.list_is_enemy[i] and user_obscure_enemy_squad_count) then
+								cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+							else
+								cell_value = r_val
+							end
+						else
+							cell_value = r_val
+						end
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+
+			-- Relations Delta from Default
+			--if self.page == 9 then
+			if self_page_desc[self.page].pg_type == "default" and self_page_desc[self.page].pg_param == "delta" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)					
+					local r_val = 0
+					local r_current, r_history
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						r_history = game_relations_analytics.get_relations_default(comm,self.list[i])
+						r_current = relation_registry.community_relation(comm, self.list[i]) or 0
+						--r_val = r_current - ( game_relations_analytics.get_relations_default(comm,self.list[i]) or r_current )
+						r_val = (r_history and r_current or 0) - (r_history or 0)
+					end
+					
+					if (k == 0) and not user_disable_squad_count then
+						-- if first row then squad count
+						r_val = "-"
+						cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+
+					elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+						-- if second row (or first and squad count disabled) then goodwill
+						r_current = relation_registry.community_goodwill(self.list[i],AC_ID) or 0
+						r_val = r_current
+						if r_val >= 2000 then
+							cell_color = color_mapping["st_ui_goodwill_5"]
+						elseif r_val < 2000 and r_val >= 1000 then
+							cell_color = color_mapping["st_ui_goodwill_4"]
+						elseif r_val < 1000 and r_val >= 500 then
+							cell_color = color_mapping["st_ui_goodwill_3"]
+						elseif r_val < 500 and r_val >= 250 then
+							cell_color = color_mapping["st_ui_goodwill_2"]
+						elseif r_val < 250 and r_val > 0 then
+							cell_color = color_mapping["st_ui_goodwill_1"]
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+						elseif r_val < 0 and r_val > -1000 then
+							cell_color = color_mapping["st_ui_goodwill_0"]
+						else
+							cell_color = color_mapping["st_ui_goodwill_00"]
+						end
+					else
+						if r_val >= game_relations.FRIENDS then
+							cell_color = color_mapping["st_goodwill_friendly_2"]
+						elseif r_val <= game_relations.ENEMIES then
+							cell_color = color_mapping["st_goodwill_enemy"]
+						elseif r_val >= 500 then
+							cell_color = color_mapping["st_goodwill_friendly_1"]
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_0"]
+						elseif r_val < 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_neg"]
+						else
+							cell_color = color_mapping["st_goodwill_indifferent_pos"]
+						end
+					end
+					
+					if k > 0 then
+						cell_value = (r_val > 0 ) and ("+"..tostring(r_val)) or tostring(r_val)
+					else
+						if not user_disable_squad_count then
+							--self.relations[i][k]:SetText("-")
+							if (self.list_is_enemy[i] and user_obscure_enemy_squad_count) then
+								cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+							else
+								cell_value = r_val
+							end
+						else
+							cell_value = r_val
+						end
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+			
+			-- default relations
+			if self_page_desc[self.page].pg_type == "default" and self_page_desc[self.page].pg_param == "ltx" then
+				if max_i_index > 0 and i <= max_i_index and k <= max_k_index then				
+					k_index = user_disable_squad_count and k or (k - 1)
+
+					local r_val = 0
+					
+					if (k > 0 and not user_disable_squad_count) or (user_disable_squad_count) then
+						local comm = self.list[k_index] or db.actor:character_community()
+						r_val = game_relations_analytics.get_relations_default(comm,self.list[i]) or 0
+					end
+					
+					-- when viewing page "Default (values)" then values refer to first snapshot:
+					
+					if (k == 0) and not user_disable_squad_count then
+						-- if first row then squad count
+						r_val = "-"
+						cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+
+					elseif (k == 1 and not user_disable_squad_count) or (k == 0 and user_disable_squad_count) then
+						-- if second row (or first and squad count disabled) then goodwill
+						r_val = 0
+						cell_color = color_mapping["st_ui_dmg_safr_pda_squadsize_0"]
+					else
+						if r_val >= game_relations.FRIENDS then
+							cell_color = color_mapping["st_goodwill_friendly_2"]
+						elseif r_val <= game_relations.ENEMIES then
+							cell_color = color_mapping["st_goodwill_enemy"]
+						elseif r_val >= 500 then
+							cell_color = color_mapping["st_goodwill_friendly_1"]
+						elseif r_val == 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_0"]
+						elseif r_val < 0 then
+							cell_color = color_mapping["st_goodwill_indifferent_neg"]
+						else
+							cell_color = color_mapping["st_goodwill_indifferent_pos"]
+						end
+					end
+					
+					if k > 0 then
+						cell_value = r_val
+					else
+						if not user_disable_squad_count then
+							--self.relations[i][k]:SetText("-")
+							if (self.list_is_enemy[i] and user_obscure_enemy_squad_count) then
+								cell_value = game.translate_string("st_ui_dmg_safr_pda_squadsize_na")
+							else
+								cell_value = r_val
+							end
+						else
+							cell_value = r_val
+						end
+					end
+					
+					if cell_color then
+						self.relations[i][k]:SetTextColor(cell_color)
+					end
+					if cell_value then
+						self.relations[i][k]:SetText(tostring(cell_value))
+					end
+				end
+			end
+		end
+	end
+
+	self:autoupdate()
+end
+
+ui_pda_relations_tab.pda_relations_tab.btn_to_text = function(self)
+	local goto_next_page = true
+	local self_page_desc = self.page_desc[self.page_cat]
+	while goto_next_page do
+		self.page = self.page + 1
+		if self.page > #self_page_desc then
+			self.page = 1
+		end
+		if self_page_desc[self.page].pg_enabled then
+			goto_next_page = false
+		end		
+	end
+	
+	self.page_show_as = self.page_show_as + 1
+	if self.page_show_as > self.pages_count then
+		self.page_show_as = 1
+	end
+
+	--self.caption:TextControl():SetText(self.page_desc[self.page].pg_caption)
+	self.caption:TextControl():SetText(game.translate_string(self_page_desc[self.page].pg_caption))
+	--self.btn:TextControl():SetText(self.page_desc[self.page].pg_label)
+	self.btn:TextControl():SetText(self.page_show_as.." / "..self.pages_count)
+	
+	self:Reset()
+end
+
+ui_pda_relations_tab.pda_relations_tab.btn_switch_cat = function(self)
+	self.page_cat = self.page_cat + 1
+	if self.page_cat > 2 then
+		self.page_cat = 1
+	end
+
+	local self_page_desc = self.page_desc[self.page_cat]
+	
+	self.page = 1
+	self.page_show_as = 1
+
+	local goto_next_page = not self_page_desc[self.page].pg_enabled
+	while goto_next_page do
+		self.page = self.page + 1
+		if self.page > #self_page_desc then
+			self.page = 1
+		end
+		if self_page_desc[self.page].pg_enabled then
+			goto_next_page = false
+		end		
+	end
+	
+	self.pages_count = get_pages_count(self_page_desc)
+	--self.caption:TextControl():SetText(self.page_desc[self.page].pg_caption)
+	self.caption:TextControl():SetText(game.translate_string(self_page_desc[self.page].pg_caption))
+	--self.btn:TextControl():SetText(self.page_desc[self.page].pg_label)
+	self.btn:TextControl():SetText(self.page_show_as.." / "..self.pages_count)
+	self.btn_sc:TextControl():SetText(game.translate_string(self.page_cat_label[self.page_cat]))
+	
+	self:Reset()
+end
