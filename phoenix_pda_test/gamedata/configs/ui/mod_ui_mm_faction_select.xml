@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="windows-1251"?>
-<window>
-    <!-- Добавляем кнопку Феникса в сетку -->
-    <btn_faction_phoenix x="0" y="0" width="70" height="70" stretch="1">
-        <texture_e>ui_in_game2_phoenix</texture_e>
-        <texture_t>ui_in_game2_phoenix</texture_t>
-        <texture_h>ui_in_game2_phoenix</texture_h>
-    </btn_faction_phoenix>
-</window>
