@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<w>
+    <file_name name="ui\ui_faction_phoenix">
+        <texture id="ui_faction_phoenix" x="0" y="0" width="256" height="256" />
+        <texture id="ui_in_game2_phoenix" x="0" y="0" width="256" height="256" />
+    </file_name>
+</w>

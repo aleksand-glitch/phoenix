@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="ui_mcm_menu_phoenix_faction">
+        <text>Phoenix Faction</text>
+    </string>
+    <string id="ui_mcm_phoenix_faction_become_phoenix">
+        <text>Become Phoenix</text>
+    </string>
+    <string id="ui_mcm_phoenix_faction_revert_to_stalker">
+        <text>Revert to Loner</text>
+    </string>
+    <string id="ui_mcm_phoenix_faction_description">
+        <text>Allow faction selection at character creation (requires modded exe).</text>
+    </string>
+    <string id="st_faction_phoenix">
+        <text>Phoenix</text>
+    </string>
+    <string id="st_faction_phoenix_desc">
+        <text>Phoenix faction</text>
+    </string>
+</string_table>

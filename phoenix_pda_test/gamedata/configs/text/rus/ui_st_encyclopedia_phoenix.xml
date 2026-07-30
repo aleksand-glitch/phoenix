@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="encyclopedia_factions_phoenix">
+        <text>Феникс</text>
+    </string>
+    <string id="encyclopedia_factions_phoenix_text">
+        <text>
+            %c[pda_white]Информация о фракции "Феникс"%c[ui_gray_1] - это вспомогательная информация для игры в Anomaly.
+
+            %c[pda_green]Описание%c[ui_gray_1]
+            Это фракция, которую можно выбрать при создании персонажа.
+        </text>
+    </string>
+</string_table>

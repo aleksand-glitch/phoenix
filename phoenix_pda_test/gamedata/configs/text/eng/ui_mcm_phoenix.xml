@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="windows-1251" ?>
+<string_table>
+	<string id="ui_mcm_phoenix_title">
+		<text>Phoenix</text>
+	</string>
+	<string id="ui_mcm_phoenix_desc">
+		<text>Select your faction at character creation (requires modded exe).</text>
+	</string>
+	<string id="ui_mcm_phoenix_become">
+		<text>Become Phoenix</text>
+	</string>
+	<string id="ui_mcm_phoenix_cannot_switch">
+		<text>Failed to switch faction — modded exe required (xray-monolith)</text>
+	</string>
+	<string id="ui_mcm_phoenix_reverted">
+		<text>You returned to the: Loner faction</text>
+	</string>
+	<string id="st_faction_phoenix">
+		<text>Phoenix</text>
+	</string>
+	<string id="st_faction_phoenix_desc">
+		<text>Phoenix faction</text>
+	</string>
+</string_table>

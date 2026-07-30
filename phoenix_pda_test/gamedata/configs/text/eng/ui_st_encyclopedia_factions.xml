@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="encyclopedia_factions_phoenix">
+        <text>Phoenix</text>
+    </string>
+    <string id="encyclopedia_factions_phoenix_text">
+        <text>
+            %c[pda_white]Information about the "Phoenix"%c[ui_gray_1] - is an additional information for playing in Anomaly.
+
+            %c[pda_green]Description%c[ui_gray_1]
+            This is a faction that can be selected at character creation.
+
+            %c[pda_blue]Capabilities%c[ui_gray_1]
+            - Selection at new game start
+            - Integration with faction relations system
+        </text>
+    </string>
+</string_table>

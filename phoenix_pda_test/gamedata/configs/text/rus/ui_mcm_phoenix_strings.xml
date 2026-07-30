@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="ui_mcm_phoenix_title">
+        <text>Феникс</text>
+    </string>
+    <string id="ui_mcm_phoenix_desc">
+        <text>Выберите вашу фракцию при создании персонажа (требуется modded exe).</text>
+    </string>
+    <string id="ui_mcm_phoenix_become">
+        <text>Стать Фениксом</text>
+    </string>
+</string_table>

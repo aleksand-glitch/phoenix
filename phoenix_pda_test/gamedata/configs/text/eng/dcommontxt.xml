@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+    <string id="dcommontxt_factions_phoenix">
+        <text>Phoenix</text>
+    </string>
+    <string id="ui_mcm_dcommontxt_factions_phoenix">
+        <text>Phoenix</text>
+    </string>
+    <string id="st_faction_phoenix">
+        <text>Phoenix</text>
+    </string>
+    <string id="st_faction_phoenix_desc">
+        <text>Phoenix faction</text>
+    </string>
+</string_table>
