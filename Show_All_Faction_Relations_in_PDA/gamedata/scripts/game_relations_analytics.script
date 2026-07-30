@@ -1,0 +1,503 @@
+-- ======================================================================
+--[[	Faction Relations Analytics
+-- ======================================================================
+ 	
+	Extension Module to
+		"Show All Faction Relations in PDA"
+		"Dynamic Faction Relations Customizer"
+	
+ 	Author: dEmergence (dEmergence @ ModDB)
+ 	Version: 1.0.1
+	Updated: 20250511
+	
+	This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
+	
+-- ===================================================================--]]
+
+printdbg("# LOADING: Faction Relations Analytics")
+
+--========================================< Utility >========================================--
+
+function print_table(table, subs)
+	local sub
+	if subs ~= nil then
+		sub = subs
+	else
+		sub = ""
+	end
+	for k,v in pairs(table) do
+		if type(v) == "table" then
+			print_table(v, sub.."["..k.."]----->")
+		elseif type(v) == "function" then
+			printf(sub.."%s = function",k)
+		elseif type(v) == "userdata" then
+			if (v.x) then
+				printf(sub.."%s = %s",k,utils_data.vector_to_string(v))
+			else
+				printf(sub.."%s = userdata", k)
+			end
+		elseif type(v) == "boolean" then
+					if v == true then
+							if(type(k)~="userdata") then
+									printf(sub.."%s = true",k)
+							else
+									printf(sub.."userdata = true")
+							end
+					else
+							if(type(k)~="userdata") then
+									printf(sub.."%s = false", k)
+							else
+									printf(sub.."userdata = false")
+							end
+					end
+		else
+			if v ~= nil then
+				printf(sub.."%s = %s", k,v)
+			else
+				printf(sub.."%s = nil", k,v)
+			end
+		end
+	end
+end
+
+function list_contains(t,value)
+	for i = 1,#t do
+		if t[i] == value then
+			return true
+		end
+	end
+	return false
+end
+
+--========================================< Main Init >========================================--
+
+factions_table = dup_table(game_relations.factions_table)
+--factions_table = game_relations.factions_table
+factions_table_all = dup_table(game_relations.factions_table_all)
+--factions_table_all = game_relations.factions_table_all
+if list_contains(game_relations.factions_table_all,"zombied") and not list_contains(factions_table,"zombied") then
+	table.insert(factions_table,"zombied")
+end
+if list_contains(game_relations.factions_table_all,"monster") and not list_contains(factions_table,"monster") then
+	table.insert(factions_table,"monster")
+end
+
+local relations_default = nil
+local relations_history = nil
+local kill_count = nil
+local kill_count_history = nil
+relations_analytics_config = nil
+
+--========================================< Setters and Getters >========================================--
+
+function init_relations_defaults()
+	local ini_g = ini_file("creatures\\game_relations.ltx")
+	local tbl = {}
+	relations_default = {}
+	
+	for i=1, #factions_table_all do
+		local value = ini_g:r_string_ex("communities_relations" , factions_table_all[i])
+		tbl[factions_table_all[i]] = str_explode(value,",")
+		relations_default[factions_table_all[i]] = {}
+	end
+	
+	for i=1,#factions_table_all do
+		for j=1,#factions_table_all do
+			relations_default[factions_table_all[i]][factions_table_all[j]] = tonumber(tbl[factions_table_all[i]][j])
+		end
+	end
+end
+
+function get_relations_default(fac1,fac2)
+	if not relations_default then
+		init_relations_defaults()
+	end
+	return relations_default[fac1][fac2]
+end
+
+function get_relations_history(tiz,fac1,fac2)
+	-- return nil if history table if not initialized
+	if not relations_history[tiz] then
+		return
+	end
+	if not relations_history[tiz][fac1] then
+		return
+	end
+	if not relations_history[tiz][fac1][fac2] then
+		return
+	end
+	
+	-- return value
+	return relations_history[tiz][fac1][fac2]
+end
+
+function get_killcount(fac1,fac2)
+	-- return nil if history table if not initialized
+	if not kill_count then
+		return
+	end
+	if not kill_count[fac1] then
+		return
+	end
+	if not kill_count[fac1][fac2] then
+		return
+	end
+	
+	-- return value
+	return kill_count[fac1][fac2]
+end
+
+function get_killcount_history(tiz,fac1,fac2)
+	-- return nil if history table if not initialized
+	if not kill_count_history[tiz] then
+		return
+	end
+	if not kill_count_history[tiz][fac1] then
+		return
+	end
+	if not kill_count_history[tiz][fac1][fac2] then
+		return
+	end
+	
+	-- return value
+	return kill_count_history[tiz][fac1][fac2]
+end
+
+function increase_killcount(victim_faction,killer_faction)
+	if not kill_count then
+		kill_count = {}
+	end
+	if not kill_count[killer_faction] then
+		kill_count[killer_faction] = {}
+	end
+	
+	if not kill_count[killer_faction][victim_faction] then
+		kill_count[killer_faction][victim_faction] = 1
+	else
+		kill_count[killer_faction][victim_faction] = kill_count[killer_faction][victim_faction] + 1
+	end
+end
+
+function find_nearest_snapshot_index_lower(max_tiz)
+	--local min_tiz = (max_tiz < 24) and 0 or (max_tiz - 23)
+	local min_tiz = 0
+	for i=max_tiz,min_tiz,-1 do
+		if relations_history[i] then
+			return i
+		end
+	end
+	return min_tiz
+end
+
+-- function find_nearest_snapshot_index_higher(min_tiz)
+	-- local max_tiz = math.min(min_tiz + 23, relations_analytics_config["last_tiz"])
+	-- for i = min_tiz, max_tiz do
+		-- if relations_history[i] then
+			-- return i
+		-- end
+	-- end
+	-- --return min_tiz
+-- end
+
+function remove_old_snapshots(keep_tiz)
+	if keep_tiz < 2 then return end
+	local max_tiz = find_nearest_snapshot_index_lower((keep_tiz - 1))
+	if max_tiz == 0 then return end
+	local min_tiz = math.max(((math.floor((keep_tiz-1)/24)*24) + 1),1)
+	if min_tiz == keep_tiz then return end
+	for i = min_tiz, max_tiz do
+		if relations_history[i] then
+			relations_history[i] = nil
+		end
+	end
+end
+
+function create_snapshot()
+	local tiz = utils_obj.time_spent_in_zone(3)
+--	local is_first_snapshot = false
+	-- setup tables when needed
+	if not relations_default then
+		init_relations_defaults()
+	end
+	if not relations_history then
+		relations_history = {}
+	end
+	if not kill_count_history then
+		kill_count_history = {}
+	end
+	if not relations_analytics_config then
+		relations_analytics_config = {
+			--["last_tiz"] = 0,
+			-- ["t_24h"] = (tiz < 24) and 0 or -1, -- 24
+			-- ["t_72h"] = (tiz < 72) and 0 or -1, -- 72
+			-- ["t_1wk"] = (tiz < 168) and 0 or -1, -- 168
+			-- ["t_2wk"] = (tiz < 336) and 0 or -1, -- 336
+			-- ["t_4wk"] = (tiz < 672) and 0 or -1, -- 672
+			["t_24h"] = 0,
+			["t_72h"] = 0,
+			["t_1wk"] = 0,
+			["t_2wk"] = 0,
+			["t_4wk"] = 0,
+			["t_all"] = 0
+		}
+		tiz = 0 -- reset to create first snapshot
+	end
+
+	-- Was intended to make sure snapshots are not taken before actual map is loaded
+	-- However, relation setup seems to happen early enough anyways so disabled
+	--if level and level.name() == "fake_start" then return end
+	
+	-- snapshot already exists
+	if relations_history[tiz] then return end
+	
+	if tiz == 0 then
+		printdbg("# INITIALIZING: Faction Relations Analytics Snapshot Data")
+	else
+		printdbg("# UPDATING: Faction Relations Analytics Snapshot Data @ tiz == "..tostring(tiz))
+	end
+	
+	relations_analytics_config["last_tiz"] = tiz -- this is saved only for orientation in log file
+	relations_history[tiz] = {}
+	kill_count_history[tiz] = {}
+	kill_count_history[tiz]["zone"] = {}
+	kill_count_history[tiz]["actor"] = {}
+	
+	for i=1,#factions_table do
+		printdbg("* Relation History Table for '"..tostring(factions_table[i]).."'")
+		if not relations_history[tiz][factions_table[i]] then
+			relations_history[tiz][factions_table[i]] = {}
+		end
+		if not kill_count_history[tiz][factions_table[i]] then
+			kill_count_history[tiz][factions_table[i]] = {}
+		end		
+		
+		-- save squad count
+		local faction_squad_count = 0
+		for id,v in pairs( SIMBOARD.squads ) do
+			local squad = alife_object(id)
+			if (squad.player_id == factions_table[i]) then
+				faction_squad_count = faction_squad_count + 1
+			end
+		end
+		printdbg("* Squad Count : "..tostring(faction_squad_count))
+		relations_history[tiz][factions_table[i]]["squadcount"] = faction_squad_count
+		
+		-- save goodwill
+		printdbg("* Goodwill : "..tostring(relation_registry.community_goodwill(factions_table[i],AC_ID)))
+		relations_history[tiz][factions_table[i]]["goodwill"] = relation_registry.community_goodwill(factions_table[i],AC_ID)
+		
+		-- save kill_count (zone/actor vs faction)
+		local zone_killz = get_killcount("zone", factions_table[i]) or 0
+		kill_count_history[tiz]["zone"][factions_table[i]] = zone_killz
+		printdbg("* NPCs killed by Zone: "..tostring(zone_killz))
+
+		local actor_killz = get_killcount("actor", factions_table[i]) or 0
+		kill_count_history[tiz]["actor"][factions_table[i]] = actor_killz		
+		printdbg("* NPCs killed by Actor: "..tostring(actor_killz))
+		
+		for j=1,#factions_table do
+			-- save relations
+			local relation = relation_registry.community_relation(factions_table[i],factions_table[j])
+			--if dynamic_faction_relations_customizer and dynamic_faction_relations_customizer.settings["apply_inner_faction_unrest"] and factions_table[i] == factions_table[j] then
+				-- " relation = dfrc.get_faction_unrest(faction) " -- dfrc_ifu is local in dfrc main module, requires getter var.
+			--end
+			relations_history[tiz][factions_table[i]][factions_table[j]] = relation
+			
+			-- save kill_count (faction vs faction)
+			local killz = get_killcount(factions_table[i],factions_table[j]) or 0
+			kill_count_history[tiz][factions_table[i]][factions_table[j]] = killz
+
+			printdbg("* Relation : "..tostring(factions_table[i]).." <> "..tostring(factions_table[j]).." : "..tostring(relation)..", Kill Count: "..tostring(killz))
+		end
+		
+	end
+	
+	--print_table(relations_history[tiz])
+	
+	if (tiz > 24) then
+		relations_analytics_config["t_24h"] = find_nearest_snapshot_index_lower((tiz - 24)) -- or find_nearest_snapshot_index_higher((tiz - 24))
+	end
+	if (tiz > 72) then
+		relations_analytics_config["t_72h"] = find_nearest_snapshot_index_lower((tiz - 72)) -- or find_nearest_snapshot_index_higher((tiz - 72))
+		-- this index is used as start-index for cleanup of hourly snapshots
+		if relations_analytics_config["t_72h"] > 0 then
+			remove_old_snapshots(relations_analytics_config["t_72h"])
+		end
+	end
+	if (tiz > 168) then
+		relations_analytics_config["t_1wk"] = find_nearest_snapshot_index_lower((tiz - 168)) -- or find_nearest_snapshot_index_higher((tiz - 168))
+	end
+	if (tiz > 336) then
+		relations_analytics_config["t_2wk"] = find_nearest_snapshot_index_lower((tiz - 336)) -- or find_nearest_snapshot_index_higher((tiz - 336))
+	end
+	if (tiz > 672) then
+		relations_analytics_config["t_4wk"] = find_nearest_snapshot_index_lower((tiz - 672)) -- or find_nearest_snapshot_index_higher((tiz - 672))
+	end
+
+	-- if we just created the initial entry then call function again to also create the current snapshot
+	if tiz == 0 then
+		create_snapshot()
+	end
+end
+
+
+--========================================< Callbacks >========================================--
+
+ORIGINAL_onpcod = game_relations.offline_npc_on_death
+function game_relations.offline_npc_on_death(victim_se, killer_se) -- server objects! called from offline_combat_simulator
+	--printdbg("game_relations_analytics MP'd offline_npc_on_death() called.")
+	-- Return if the actor is not the killer.
+	if not (victim_se) then return end
+	local killer_faction
+	local victim_faction = alife_character_community(victim_se)
+	if not (killer_se) then
+		killer_faction = "zone"
+	else
+		if (killer_se.id == AC_ID) then
+			killer_faction = "actor"
+			increase_killcount(victim_faction,killer_faction)
+		end
+		killer_faction = alife_character_community(killer_se)
+		increase_killcount(victim_faction,killer_faction)
+	end
+	ORIGINAL_onpcod(victim_se, killer_se)
+end
+
+-- Called when an NPC is killed.
+function npc_on_death_callback(victim, killer)
+	-- Return if the actor is not the killer.
+	if not (victim) then return end
+	local killer_faction
+	local victim_faction = character_community(victim)
+	if not (killer) then
+		killer_faction = "zone"
+	else
+		if (killer:id() == AC_ID) then
+			killer_faction = "actor"
+			increase_killcount(victim_faction,killer_faction)
+		end
+		killer_faction = character_community(killer)
+		increase_killcount(victim_faction,killer_faction)
+	end
+end
+
+-- local function actor_on_first_update()
+	-- create_snapshot()
+-- end
+
+local function save_state(m_data)
+	if (USE_MARSHAL) then
+		create_snapshot()
+		
+		printdbg("# SAVING: Faction Relations Analytics Persistent Data")
+		
+		if relations_analytics_config then
+			printdbg("- TABLE: relations_analytics_config")
+			print_table(relations_analytics_config)
+			--m_data.relations_analytics_config = dup_table(relations_analytics_config)
+			m_data.relations_analytics_config = relations_analytics_config
+		else
+			printdbg("! TABLE: relations_analytics_config is nil")
+		end
+		
+		if relations_default then
+			printdbg("- TABLE: relations_default")
+			--print_table(relations_default)
+			--m_data.relations_default = dup_table(relations_default)
+			m_data.relations_default = relations_default
+		else
+			printdbg("! TABLE: relations_default is nil")
+		end
+		
+		if relations_history then
+			printdbg("- TABLE: relations_history")
+			--print_table(relations_history)
+			--m_data.relations_history = dup_table(relations_history)
+			m_data.relations_history = relations_history
+		else
+			printdbg("! TABLE: relations_history is nil")
+		end
+		
+		if kill_count then
+			printdbg("- TABLE: kill_count")
+			--print_table(kill_count)
+			--m_data.kill_count = dup_table(kill_count)
+			m_data.kill_count = kill_count
+		else
+			printdbg("! TABLE: kill_count is nil")
+		end
+
+		if kill_count_history then
+			printdbg("- TABLE: kill_count_history")
+			--print_table(kill_count_history)
+			--m_data.kill_count_history = dup_table(kill_count_history)
+			m_data.kill_count_history = kill_count_history
+		else
+			printdbg("! TABLE: kill_count_history is nil")
+		end
+	end
+end
+
+local function load_state(m_data)
+	if (USE_MARSHAL) then
+		printdbg("# LOADING: Faction Relations Analytics Persistent Data")
+		
+		relations_analytics_config = m_data.relations_analytics_config or nil
+		if relations_analytics_config then
+			printdbg("- TABLE: relations_analytics_config")
+			print_table(relations_analytics_config)
+		else
+			printdbg("! TABLE: relations_analytics_config is nil")
+		end
+		
+		relations_default = m_data.relations_default or nil
+		if relations_default then
+			printdbg("- TABLE: relations_default")
+			--print_table(relations_default)
+		else
+			printdbg("! TABLE: relations_default is nil")
+		end
+		
+		relations_history = m_data.relations_history or nil
+		if relations_history then
+			printdbg("- TABLE: relations_history")
+			--print_table(relations_history)
+		else
+			printdbg("! TABLE: relations_history is nil")
+		end
+		
+		kill_count = m_data.kill_count or nil
+		if kill_count then
+			printdbg("- TABLE: kill_count")
+			--print_table(kill_count)
+		else
+			printdbg("! TABLE: kill_count is nil")
+		end
+		
+		kill_count_history = m_data.kill_count_history or nil
+		if kill_count_history then
+			printdbg("- TABLE: kill_count_history")
+			--print_table(kill_count_history)
+		else
+			printdbg("! TABLE: kill_count_history is nil")
+		end
+		--create_snapshot() -- crashes the game
+	end
+end
+
+-- local function on_game_load()
+	-- if (USE_MARSHAL) then
+		-- if (alife_storage_manager.get_state().new_game_relations) then
+			-- create_snapshot()
+		-- --else
+		-- end
+	-- end
+-- end
+
+function on_game_start()
+	--RegisterScriptCallback("actor_on_first_update",actor_on_first_update)
+	RegisterScriptCallback("npc_on_death_callback", npc_on_death_callback)
+	--RegisterScriptCallback("on_game_load",on_game_load)
+	RegisterScriptCallback("save_state",save_state)
+	RegisterScriptCallback("load_state",load_state)
+end
